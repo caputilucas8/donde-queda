@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>¿Dónde Queda?</title>
+<style>
+:root{
+  --sea:#0e1a2b; --sea2:#13233a;
+  --land:#e9e4d8; --land-hover:#f4efe3;
+  --prov:#3c465a; --dept:#cfc8b8;
+  --ink:#f3f1ea; --muted:#9aa6b8;
+  --panel:rgba(14,22,36,.92); --line:rgba(255,255,255,.08);
+  --accent:#4fb3ff; --gold:#ffc94d; --good:#4fd18b; --bad:#ff6b6b;
+  --pin:#ff4d6d; --target:#22c55e;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:var(--sea);color:var(--ink);
+  font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+#map{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;
+  background:radial-gradient(ellipse at 60% 40%,var(--sea2),var(--sea) 70%)}
+#map.guess{cursor:crosshair}
+#map.dragging{cursor:grabbing}
+.prov{fill:var(--land);stroke:var(--prov);stroke-width:1.8;stroke-linejoin:round;vector-effect:non-scaling-stroke;transition:fill .15s}
+#map.guess .prov:hover{fill:var(--land-hover)}
+.dept{fill:none;stroke:var(--dept);stroke-width:.6;vector-effect:non-scaling-stroke;pointer-events:none}
+.pin-guess{fill:var(--pin);stroke:#fff;vector-effect:non-scaling-stroke;stroke-width:2.5}
+.pin-target{fill:var(--target);stroke:#fff;vector-effect:non-scaling-stroke;stroke-width:2.5}
+.pin-ring{fill:none;stroke:var(--target);vector-effect:non-scaling-stroke;stroke-width:2;opacity:.6}
+.link{stroke:#1d2533;stroke-width:2;stroke-dasharray:6 5;fill:none;vector-effect:non-scaling-stroke}
+.mlabel{font-weight:700;paint-order:stroke;stroke:#fff;stroke-width:4px;fill:#1d2533;stroke-linejoin:round}
+
+/* HUD */
+#hud{position:fixed;top:14px;left:50%;transform:translateX(-50%);display:none;align-items:stretch;gap:0;
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(8px);
+  box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:hidden;max-width:calc(100% - 24px)}
+#hud.on{display:flex}
+.hud-cell{padding:10px 18px;display:flex;flex-direction:column;justify-content:center;border-left:1px solid var(--line)}
+.hud-cell:first-child{border-left:0}
+.hud-k{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.hud-v{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+#hudCity{font-size:24px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
+
+/* zoom buttons */
+#zoom{position:fixed;right:16px;bottom:22px;display:none;flex-direction:column;gap:6px}
+#zoom.on{display:flex}
+#zoom button{width:42px;height:42px;border-radius:10px;background:var(--panel);border:1px solid var(--line);font-size:20px;font-weight:700}
+#zoom button:hover{background:#1c2b44}
+
+/* bottom bar */
+#bar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);display:none}
+#bar.on{display:block}
+.btn{padding:14px 26px;border-radius:12px;font-weight:800;font-size:16px;letter-spacing:.02em;
+  background:var(--accent);color:#06121f;box-shadow:0 8px 24px rgba(79,179,255,.35);transition:transform .08s,opacity .2s}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none;box-shadow:none}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);box-shadow:none}
+.hint{font-size:12px;color:var(--muted);text-align:center;margin-top:8px}
+kbd{font:inherit;font-size:11px;padding:1px 6px;border:1px solid var(--line);border-radius:5px;background:rgba(255,255,255,.05)}
+
+/* overlays */
+.overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
+.overlay.on{display:flex}
+.overlay.dim{background:rgba(6,12,22,.55);backdrop-filter:blur(2px)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:28px;width:min(520px,100%);
+  box-shadow:0 20px 60px rgba(0,0,0,.5);backdrop-filter:blur(10px)}
+h1{font-size:40px;font-weight:900;letter-spacing:-.02em;line-height:1}
+h1 span{color:var(--accent)}
+.sub{color:var(--muted);margin-top:8px;line-height:1.45}
+.label{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:22px 0 8px}
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:6px;background:rgba(255,255,255,.04);padding:5px;border-radius:12px;border:1px solid var(--line)}
+.seg button{padding:10px 6px;border-radius:8px;font-weight:700;color:var(--muted)}
+.seg button.sel{background:var(--accent);color:#06121f}
+.seg button:not(.sel):hover{color:var(--ink);background:rgba(255,255,255,.05)}
+.diffdesc{font-size:13px;color:var(--muted);margin-top:8px;min-height:18px}
+.rules{margin-top:20px;font-size:13px;color:var(--muted);line-height:1.6;border-top:1px solid var(--line);padding-top:14px}
+.rules b{color:var(--ink)}
+.best{font-size:13px;color:var(--gold);margin-top:10px;min-height:18px}
+.row{display:flex;gap:10px;margin-top:22px}
+.row .btn{flex:1}
+.credits{font-size:11px;color:#6b778a;margin-top:16px}
+
+/* province modal */
+#provCard{text-align:center}
+.rnd{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.city{font-size:40px;font-weight:900;margin:10px 0 4px;line-height:1.05;word-break:break-word}
+.q{color:var(--muted);margin-bottom:16px}
+.q b{color:var(--gold)}
+#provInput{width:100%;padding:14px 16px;font:inherit;font-size:20px;font-weight:700;border-radius:12px;border:2px solid var(--line);
+  background:rgba(255,255,255,.06);color:var(--ink);outline:none;text-align:center}
+#provInput:focus{border-color:var(--accent)}
+.timer{height:8px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:14px}
+.timer i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--gold),var(--accent));transform-origin:left}
+.timer.low i{background:var(--bad)}
+.secs{font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted);margin-top:6px}
+
+/* result panel */
+#result{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:none;z-index:5;width:min(560px,calc(100% - 24px))}
+#result.on{display:block}
+#result .card{padding:20px 22px}
+.res-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.res-pts{font-size:38px;font-weight:900;font-variant-numeric:tabular-nums;color:var(--gold)}
+.res-pts small{font-size:16px;color:var(--muted);font-weight:700}
+.res-km{font-size:18px;font-weight:700;text-align:right}
+.res-km small{display:block;font-size:12px;color:var(--muted);font-weight:500}
+.meter{height:8px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}
+.meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ff6b6b,#ffc94d 50%,#4fd18b);transition:width .9s cubic-bezier(.2,.8,.2,1)}
+.res-line{font-size:14px;padding:6px 0;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:10px}
+.res-line .ok{color:var(--good);font-weight:700}
+.res-line .no{color:var(--bad);font-weight:700}
+.res-note{font-size:12px;color:var(--muted);margin-top:4px}
+#result .row{margin-top:14px}
+
+/* final */
+.total{font-size:56px;font-weight:900;color:var(--gold);font-variant-numeric:tabular-nums;line-height:1;margin-top:14px}
+.total small{font-size:18px;color:var(--muted)}
+.rank{font-size:18px;font-weight:800;margin-top:8px}
+table{width:100%;border-collapse:collapse;margin-top:18px;font-size:14px}
+td,th{padding:7px 4px;border-top:1px solid var(--line);text-align:left}
+th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;border-top:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+td .p{display:block;font-size:12px;color:var(--muted)}
+.newbest{color:var(--gold);font-weight:800;margin-top:6px}
+#finalCard{max-height:calc(100vh - 32px);overflow:auto}
+
+@media (max-width:640px){
+  h1{font-size:32px}
+  .city{font-size:30px}
+  #hudCity{font-size:18px;max-width:52vw}
+  .hud-cell{padding:8px 12px}
+  .hud-v{font-size:15px}
+  .card{padding:20px}
+  .res-pts{font-size:30px}
+  .total{font-size:44px}
+}
+</style>
+</head>
+<body>
+<svg id="map" xmlns="http://www.w3.org/2000/svg">
+  <g id="gLand"></g>
+  <path id="gDept" class="dept"></path>
+  <g id="gMarks"></g>
+</svg>
+
+<div id="hud">
+  <div class="hud-cell"><div class="hud-k">Ronda</div><div class="hud-v" id="hudRound">1/5</div></div>
+  <div class="hud-cell"><div class="hud-k">Ubicá</div><div id="hudCity">—</div></div>
+  <div class="hud-cell"><div class="hud-k">Puntos</div><div class="hud-v" id="hudScore">0</div></div>
+</div>
+
+<div id="zoom">
+  <button id="zIn" title="Acercar">+</button>
+  <button id="zOut" title="Alejar">−</button>
+  <button id="zFit" title="Ver toda Argentina" style="font-size:15px">⤢</button>
+</div>
+
+<div id="bar">
+  <button class="btn" id="btnGuess" disabled>Confirmar ubicación</button>
+  <div class="hint">Clic para pinear · arrastrá para mover · rueda para zoom · <kbd>Enter</kbd> confirma</div>
+</div>
+
+<!-- START -->
+<div class="overlay dim on" id="start">
+  <div class="card">
+    <h1>¿Dónde <span>Queda</span>?</h1>
+    <p class="sub">Te tiro una localidad argentina. Vos la pineás en el mapa. Cuanto más cerca, más puntos.</p>
+    <div class="label">Rondas</div>
+    <div class="seg" id="segRounds">
+      <button data-v="3">3</button><button data-v="5" class="sel">5</button><button data-v="9">9</button>
+    </div>
+    <div class="label">Dificultad</div>
+    <div class="seg" id="segDiff">
+      <button data-v="facil">Fácil</button><button data-v="normal" class="sel">Normal</button>
+      <button data-v="dificil">Difícil</button><button data-v="experto">Experto</button>
+    </div>
+    <div class="diffdesc" id="diffDesc"></div>
+    <div class="best" id="bestLine"></div>
+    <div class="row"><button class="btn" id="btnStart">Jugar</button></div>
+    <div class="rules">
+      <b>Cómo se juega.</b> Cada ronda arranca con <b>10 segundos</b> para escribir la provincia: si acertás, <b>+500</b>.
+      Después pineás la localidad en el mapa: hasta <b>5000</b> puntos según la distancia.
+      Máximo por ronda: <b>5500</b>.
+    </div>
+    <div class="credits">Límites: Instituto Geográfico Nacional (IGN) · Localidades: GeoNames (CC BY 4.0)</div>
+  </div>
+</div>
+
+<!-- PROVINCE -->
+<div class="overlay dim" id="provModal">
+  <div class="card" id="provCard">
+    <div class="rnd" id="provRound">Ronda 1 de 5</div>
+    <div class="city" id="provCity">—</div>
+    <div class="q">¿En qué provincia está? <b>+500</b> si acertás</div>
+    <input id="provInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Escribí la provincia…">
+    <div class="timer" id="provTimer"><i id="provBar"></i></div>
+    <div class="secs" id="provSecs">10.0 s</div>
+    <div class="row">
+      <button class="btn ghost" id="btnProvSkip">No sé</button>
+      <button class="btn" id="btnProvOk">Responder</button>
+    </div>
+  </div>
+</div>
+
+<!-- ROUND RESULT -->
+<div id="result">
+  <div class="card">
+    <div class="res-top">
+      <div class="res-pts" id="resPts">0 <small>pts</small></div>
+      <div class="res-km" id="resKm">— km<small>de distancia</small></div>
+    </div>
+    <div class="meter"><i id="resMeter"></i></div>
+    <div class="res-line"><span>Ubicación</span><span id="resLoc">—</span></div>
+    <div class="res-line"><span>Provincia</span><span id="resProv">—</span></div>
+    <div class="res-note" id="resNote"></div>
+    <div class="row"><button class="btn" id="btnNext">Siguiente ronda</button></div>
+  </div>
+</div>
+
+<!-- FINAL -->
+<div class="overlay dim" id="final">
+  <div class="card" id="finalCard">
+    <div class="rnd">Partida terminada</div>
+    <div class="total" id="finTotal">0 <small>/ 0</small></div>
+    <div class="rank" id="finRank"></div>
+    <div class="newbest" id="finBest"></div>
+    <table>
+      <thead><tr><th>#</th><th>Localidad</th><th class="n">Km</th><th class="n">Prov.</th><th class="n">Pts</th></tr></thead>
+      <tbody id="finRows"></tbody>
+    </table>
+    <div class="row">
+      <button class="btn ghost" id="btnMenu">Menú</button>
+      <button class="btn" id="btnAgain">Jugar de nuevo</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TOPO = /*__TOPO__*/null;
+const CITIES_RAW = /*__CITIES__*/null;
+
+/* ================= CONFIG ================= */
+const MAX_PTS = 5000;          // puntos máximos por ubicación
+const PROV_BONUS = 500;        // bonus por provincia correcta
+const PROV_SECONDS = 10;       // tiempo para responder la provincia
+const DECAY_KM = 400;          // pts = 5000 * e^(-km/DECAY_KM)
+const PERFECT_KM = 2;          // a menos de esto: 5000 clavados
+
+const PROVS = {
+  "02":"Ciudad Autónoma de Buenos Aires","06":"Buenos Aires","10":"Catamarca","14":"Córdoba","18":"Corrientes",
+  "22":"Chaco","26":"Chubut","30":"Entre Ríos","34":"Formosa","38":"Jujuy","42":"La Pampa","46":"La Rioja",
+  "50":"Mendoza","54":"Misiones","58":"Neuquén","62":"Río Negro","66":"Salta","70":"San Juan","74":"San Luis",
+  "78":"Santa Cruz","82":"Santa Fe","86":"Santiago del Estero","90":"Tucumán","94":"Tierra del Fuego"
+};
+const PROV_ALIASES = {
+  "02":["caba","capital federal","capital","ciudad de buenos aires","ciudad autonoma","ciudad autonoma de buenos aires","cf","cdad de buenos aires"],
+  "06":["buenos aires","bs as","bsas","pba","pcia de buenos aires","provincia de buenos aires","baires","bs aires"],
+  "86":["santiago del estero","santiago","sgo del estero","stgo del estero","sde"],
+  "94":["tierra del fuego","tdf","tierra del fuego antartida e islas del atlantico sur"],
+  "14":["cba"],"50":["mza"],"90":["tuc"],"58":["nqn"],"18":["ctes"],"82":["sta fe","stafe"],"30":["entrerios"]
+};
+const DIFFS = {
+  facil:  {name:"Fácil",   desc:"Capitales y ciudades grandes del interior.", f:c=>c.cap || (c.pop>=60000 && !c.amba)},
+  normal: {name:"Normal",  desc:"Ciudades de más de 20.000 habitantes.",      f:c=>c.pop>=20000},
+  dificil:{name:"Difícil", desc:"Ciudades y pueblos de más de 5.000 habitantes.", f:c=>c.pop>=5000},
+  experto:{name:"Experto", desc:"Todo: hasta pueblos de mil habitantes. Suerte.", f:c=>true}
+};
+const RANKS = [
+  [0.90,"Baqueano. Conocés el país como la palma de tu mano."],
+  [0.75,"Camionero de la Ruta 40."],
+  [0.55,"Viajante de comercio."],
+  [0.35,"Turista con GPS."],
+  [0.00,"Nunca saliste de la General Paz."]
+];
+
+/* ================= UTIL ================= */
+const $ = id => document.getElementById(id);
+const norm = s => s.normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase()
+  .replace(/[.,;:'"()\-_/]/g," ").replace(/\b(provincia|pcia|prov)\s+(de(l)?\s+)?/g," ").replace(/\s+/g," ").trim();
+const fmt = n => Math.round(n).toLocaleString("es-AR");
+const D2R = Math.PI/180, R_EARTH = 6371;
+function haversine(lat1,lon1,lat2,lon2){
+  const dLat=(lat2-lat1)*D2R, dLon=(lon2-lon1)*D2R;
+  const h=Math.sin(dLat/2)**2+Math.cos(lat1*D2R)*Math.cos(lat2*D2R)*Math.sin(dLon/2)**2;
+  return 2*R_EARTH*Math.asin(Math.min(1,Math.sqrt(h)));
+}
+function scoreFor(km){ return km<=PERFECT_KM ? MAX_PTS : Math.round(MAX_PTS*Math.exp(-km/DECAY_KM)); }
+function lev(a,b){
+  const m=a.length,n=b.length; if(!m) return n; if(!n) return m;
+  let prev=Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){ const cur=[i];
+    for(let j=1;j<=n;j++) cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+    prev=cur; }
+  return prev[n];
+}
+// devuelve el código de provincia que el jugador quiso escribir (o null)
+const PROV_KEYS = (()=>{ const out=[];
+  for(const [c,n] of Object.entries(PROVS)) out.push([norm(n),c]);
+  for(const [c,list] of Object.entries(PROV_ALIASES)) list.forEach(a=>out.push([norm(a),c]));
+  return out; })();
+function matchProvince(text){
+  const t=norm(text); if(t.length<3 && t!=="cf") return null;
+  let best=null,bestD=99,tie=false;
+  for(const [k,c] of PROV_KEYS){
+    const d=lev(t,k); const tol = k.length<=5?1:2;
+    if(d>tol) continue;
+    if(d<bestD){best=c;bestD=d;tie=false} else if(d===bestD && c!==best){tie=true}
+  }
+  return tie?null:best;
+}
+
+/* ================= PROJECTION (Lambert Conformal Conic) ================= */
+const LCC=(()=>{
+  const p1=-28*D2R,p2=-48*D2R,p0=-39*D2R,l0=-64*D2R;
+  const t=f=>Math.tan(Math.PI/4+f/2);
+  const n=Math.log(Math.cos(p1)/Math.cos(p2))/Math.log(t(p2)/t(p1));
+  const F=Math.cos(p1)*Math.pow(t(p1),n)/n;
+  const rho=f=>F/Math.pow(t(f),n);
+  const r0=rho(p0), sg=Math.sign(n);
+  return {
+    fwd(lon,lat){ const r=rho(lat*D2R), th=n*(lon*D2R-l0);
+      return [R_EARTH*r*Math.sin(th), -R_EARTH*(r0-r*Math.cos(th))]; },
+    inv(x,y){ x/=R_EARTH; y=-y/R_EARTH; const dy=r0-y;
+      const r=sg*Math.hypot(x,dy), th=Math.atan2(sg*x,sg*dy);
+      return [(th/n+l0)/D2R, (2*Math.atan(Math.pow(F/r,1/n))-Math.PI/2)/D2R]; }
+  };
+})();
+
+/* ================= DATA ================= */
+const CITIES = CITIES_RAW.map(([n,lat,lon,p,pop,cap,amba])=>({n,lat,lon,p,pop,cap:!!cap,amba:!!amba,key:norm(n)}));
+const BY_NAME = {};
+CITIES.forEach(c=>(BY_NAME[c.key] ||= []).push(c));
+
+/* ================= MAP BUILD ================= */
+const svg=$("map"), gLand=$("gLand"), gDept=$("gDept"), gMarks=$("gMarks");
+const SVGNS="http://www.w3.org/2000/svg";
+let BOUNDS;
+(function buildMap(){
+  const [sx,sy]=TOPO.transform.scale, [tx,ty]=TOPO.transform.translate;
+  const arcs=TOPO.arcs.map(a=>{ let x=0,y=0; return a.map(([dx,dy])=>{x+=dx;y+=dy;
+    const p=LCC.fwd(x*sx+tx,y*sy+ty); return [Math.round(p[0]*100)/100,Math.round(p[1]*100)/100];}); });
+  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+  arcs.forEach(a=>a.forEach(([x,y])=>{if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;}));
+  BOUNDS={minX,minY,maxX,maxY};
+  const arcPts=i=> i>=0?arcs[i]:arcs[~i].slice().reverse();
+  const ringD=r=>{ let pts=[]; r.forEach(i=>{const p=arcPts(i); pts=pts.length?pts.concat(p.slice(1)):p.slice();});
+    return "M"+pts.map(p=>p.join(",")).join("L")+"Z"; };
+  const lineD=l=>{ let pts=[]; l.forEach(i=>{const p=arcPts(i); pts=pts.length?pts.concat(p.slice(1)):p.slice();});
+    return "M"+pts.map(p=>p.join(",")).join("L"); };
+  for(const g of TOPO.objects.provs.geometries){
+    const polys=g.type==="MultiPolygon"?g.arcs:[g.arcs];
+    const path=document.createElementNS(SVGNS,"path");
+    path.setAttribute("d",polys.map(poly=>poly.map(ringD).join("")).join(""));
+    path.setAttribute("class","prov"); path.setAttribute("fill-rule","evenodd");
+    gLand.appendChild(path);
+  }
+  let dd="";
+  for(const g of TOPO.objects.dlines.geometries){
+    const lines=g.type==="MultiLineString"?g.arcs:(g.type==="LineString"?[g.arcs]:[]);
+    lines.forEach(l=>dd+=lineD(l));
+  }
+  gDept.setAttribute("d",dd);
+})();
+
+/* ================= VIEW (pan / zoom) ================= */
+const view={cx:0,cy:0,s:1};      // s = km por pixel
+let FIT_S=1, anim=null;
+function size(){ const r=svg.getBoundingClientRect(); return [r.width,r.height]; }
+// encuadra una caja dejando libres `top` px arriba (HUD) y `bottom` px abajo (botones/panel)
+function fitBox(minX,minY,maxX,maxY,pad=0.08,bottom=0,top=0){
+  const [w,h]=size(); const ah=Math.max(100,h-bottom-top);
+  const bw=(maxX-minX)*(1+pad*2), bh=(maxY-minY)*(1+pad*2);
+  const s=Math.max(bw/w,bh/ah);
+  return {cx:(minX+maxX)/2, cy:(minY+maxY)/2 + (bottom-top)*s/2, s};
+}
+function homeView(){ return fitBox(BOUNDS.minX,BOUNDS.minY,BOUNDS.maxX,BOUNDS.maxY,0.02,90,80); }
+function clampView(v){
+  v.s=Math.min(FIT_S*1.6,Math.max(FIT_S/120,v.s));
+  v.cx=Math.min(BOUNDS.maxX,Math.max(BOUNDS.minX,v.cx));
+  v.cy=Math.min(BOUNDS.maxY,Math.max(BOUNDS.minY,v.cy));
+  return v;
+}
+function applyView(){
+  const [w,h]=size();
+  svg.setAttribute("viewBox",`${view.cx-w*view.s/2} ${view.cy-h*view.s/2} ${w*view.s} ${h*view.s}`);
+  sizeMarks();
+}
+function setView(v,animate){
+  clampView(v);
+  if(anim) cancelAnimationFrame(anim), anim=null;
+  if(!animate){ Object.assign(view,v); applyView(); return; }
+  const from={...view}, t0=performance.now(), dur=650;
+  const ls0=Math.log(from.s), ls1=Math.log(v.s);
+  const step=t=>{ let k=Math.min(1,(t-t0)/dur); k=1-Math.pow(1-k,3);
+    view.cx=from.cx+(v.cx-from.cx)*k; view.cy=from.cy+(v.cy-from.cy)*k; view.s=Math.exp(ls0+(ls1-ls0)*k);
+    applyView(); if(k<1) anim=requestAnimationFrame(step); else anim=null; };
+  anim=requestAnimationFrame(step);
+}
+function zoomAt(px,py,factor){
+  const [w,h]=size();
+  const wx=view.cx+(px-w/2)*view.s, wy=view.cy+(py-h/2)*view.s;
+  const ns=Math.min(FIT_S*1.6,Math.max(FIT_S/120,view.s*factor));
+  setView({cx:wx-(px-w/2)*ns, cy:wy-(py-h/2)*ns, s:ns});
+}
+function screenToWorld(px,py){ const [w,h]=size(); return [view.cx+(px-w/2)*view.s, view.cy+(py-h/2)*view.s]; }
+function resetHome(animate){ const v=homeView(); FIT_S=v.s; setView(v,animate); }
+window.addEventListener("resize",()=>{ const keep={...view}; FIT_S=homeView().s; setView(keep); });
+
+/* pointer handling: click = pin, drag = pan, pinch = zoom */
+const pointers=new Map(); let drag=null, pinch=null;
+svg.addEventListener("pointerdown",e=>{
+  svg.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===1){ drag={x:e.clientX,y:e.clientY,cx:view.cx,cy:view.cy,moved:false}; }
+  else if(pointers.size===2){ const [a,b]=[...pointers.values()];
+    pinch={d:Math.hypot(a.x-b.x,a.y-b.y),s:view.s}; drag=null; }
+});
+svg.addEventListener("pointermove",e=>{
+  if(!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pinch && pointers.size===2){
+    const [a,b]=[...pointers.values()]; const d=Math.hypot(a.x-b.x,a.y-b.y);
+    const mx=(a.x+b.x)/2, my=(a.y+b.y)/2; const target=pinch.s*pinch.d/d;
+    zoomAt(mx,my,target/view.s); return;
+  }
+  if(drag){ const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+    if(!drag.moved && Math.hypot(dx,dy)>6){ drag.moved=true; svg.classList.add("dragging"); }
+    if(drag.moved) setView({cx:drag.cx-dx*view.s, cy:drag.cy-dy*view.s, s:view.s});
+  }
+});
+function endPointer(e){
+  if(!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if(pinch){ if(pointers.size<2) pinch=null; drag=null; return; }
+  if(drag && !drag.moved && e.type==="pointerup") onMapClick(e.clientX,e.clientY);
+  drag=null; svg.classList.remove("dragging");
+}
+svg.addEventListener("pointerup",endPointer);
+svg.addEventListener("pointercancel",endPointer);
+svg.addEventListener("wheel",e=>{ e.preventDefault(); zoomAt(e.clientX,e.clientY,Math.exp(e.deltaY*0.0018)); },{passive:false});
+$("zIn").onclick=()=>{const [w,h]=size(); zoomAt(w/2,h/2,1/1.6)};
+$("zOut").onclick=()=>{const [w,h]=size(); zoomAt(w/2,h/2,1.6)};
+$("zFit").onclick=()=>resetHome(true);
+
+/* ================= MARKERS ================= */
+let marks=[];
+function clearMarks(){ gMarks.innerHTML=""; marks=[]; }
+function addCircle(x,y,px,cls){ const c=document.createElementNS(SVGNS,"circle");
+  c.setAttribute("cx",x); c.setAttribute("cy",y); c.setAttribute("class",cls); gMarks.appendChild(c);
+  marks.push({el:c,px,kind:"r"}); return c; }
+function addLabel(x,y,text){ const t=document.createElementNS(SVGNS,"text");
+  t.setAttribute("class","mlabel"); t.textContent=text; gMarks.appendChild(t);
+  marks.push({el:t,x,y,kind:"t"}); return t; }
+function addLine(x1,y1,x2,y2){ const l=document.createElementNS(SVGNS,"line");
+  l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);
+  l.setAttribute("class","link"); gMarks.insertBefore(l,gMarks.firstChild); return l; }
+function sizeMarks(){
+  for(const m of marks){
+    if(m.kind==="r") m.el.setAttribute("r",m.px*view.s);
+    else { m.el.setAttribute("x",m.x+12*view.s); m.el.setAttribute("y",m.y-10*view.s);
+      m.el.setAttribute("font-size",15*view.s); m.el.style.strokeWidth=4*view.s; }
+  }
+}
+
+/* ================= GAME ================= */
+let cfg={rounds:5,diff:"normal"};
+let game=null;   // {pool, picks, round, total, history}
+let phase="menu"; // menu | prov | guess | result | final
+let guess=null;  // {x,y,lon,lat}
+let provTimer=null, provDeadline=0;
+
+function bestKey(){ return `dq_best_${cfg.rounds}_${cfg.diff}`; }
+function getBest(){ try{ return +localStorage.getItem(bestKey())||0 }catch(e){ return 0 } }
+function setBest(v){ try{ localStorage.setItem(bestKey(),v) }catch(e){} }
+function refreshMenu(){
+  const d=DIFFS[cfg.diff]; const n=CITIES.filter(d.f).length;
+  $("diffDesc").textContent=`${d.desc} (${fmt(n)} localidades)`;
+  const b=getBest(); $("bestLine").textContent=b?`Tu récord en ${cfg.rounds} rondas · ${d.name}: ${fmt(b)} pts`:"";
+}
+function bindSeg(id,key){
+  $(id).querySelectorAll("button").forEach(btn=>btn.onclick=()=>{
+    $(id).querySelectorAll("button").forEach(b=>b.classList.remove("sel")); btn.classList.add("sel");
+    cfg[key]= key==="rounds"? +btn.dataset.v : btn.dataset.v; refreshMenu(); });
+}
+bindSeg("segRounds","rounds"); bindSeg("segDiff","diff");
+
+function pickCities(n){
+  const pool=CITIES.filter(DIFFS[cfg.diff].f);
+  const shuffled=pool.slice();
+  for(let i=shuffled.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]]; }
+  const out=[], usedProv=new Set(), usedName=new Set();
+  // 1ª pasada: sin repetir provincia ni nombre; 2ª: permite repetir provincia
+  for(const strict of [true,false]){
+    for(const c of shuffled){
+      if(out.length>=n) break;
+      if(usedName.has(c.key) || (strict && usedProv.has(c.p))) continue;
+      out.push(c); usedName.add(c.key); usedProv.add(c.p);
+    }
+  }
+  return out;
+}
+function show(id,on){ $(id).classList.toggle("on",on); }
+
+function startGame(){
+  game={picks:pickCities(cfg.rounds),round:0,total:0,history:[]};
+  show("start",false); show("final",false);
+  nextRound();
+}
+function nextRound(){
+  show("result",false); clearMarks(); guess=null;
+  if(game.round>=game.picks.length) return endGame();
+  const city=game.picks[game.round];
+  $("hudRound").textContent=`${game.round+1}/${game.picks.length}`;
+  $("hudCity").textContent=city.n; $("hudScore").textContent=fmt(game.total);
+  show("hud",true); show("zoom",true); show("bar",false);
+  resetHome(true);
+  // fase provincia
+  phase="prov";
+  $("provRound").textContent=`Ronda ${game.round+1} de ${game.picks.length}`;
+  $("provCity").textContent=city.n;
+  $("provInput").value=""; show("provModal",true);
+  setTimeout(()=>$("provInput").focus(),30);
+  provDeadline=performance.now()+PROV_SECONDS*1000;
+  $("provTimer").classList.remove("low");
+  cancelAnimationFrame(provTimer);
+  const tick=()=>{ const left=Math.max(0,provDeadline-performance.now());
+    $("provBar").style.transform=`scaleX(${left/(PROV_SECONDS*1000)})`;
+    $("provSecs").textContent=(left/1000).toFixed(1)+" s";
+    $("provTimer").classList.toggle("low",left<3000);
+    if(left<=0) return submitProvince(true);
+    provTimer=requestAnimationFrame(tick); };
+  provTimer=requestAnimationFrame(tick);
+}
+function submitProvince(timeout){
+  if(phase!=="prov") return;
+  cancelAnimationFrame(provTimer);
+  const text=$("provInput").value.trim();
+  game.provText = text;
+  game.provAnswer = text ? matchProvince(text) : null;
+  game.provTimeout = timeout && !text;
+  show("provModal",false);
+  $("provInput").blur();
+  phase="guess"; svg.classList.add("guess");
+  show("bar",true); $("btnGuess").disabled=true;
+}
+$("btnProvOk").onclick=()=>submitProvince(false);
+$("btnProvSkip").onclick=()=>{ $("provInput").value=""; submitProvince(false); };
+$("provInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); submitProvince(false);} });
+
+function onMapClick(px,py){
+  if(phase!=="guess") return;
+  const [x,y]=screenToWorld(px,py); const [lon,lat]=LCC.inv(x,y);
+  guess={x,y,lon,lat};
+  clearMarks(); addCircle(x,y,8,"pin-guess");
+  sizeMarks(); $("btnGuess").disabled=false;
+}
+function confirmGuess(){
+  if(phase!=="guess" || !guess) return;
+  phase="result"; svg.classList.remove("guess"); show("bar",false);
+  const city=game.picks[game.round];
+  // si hay homónimos (ej. "San Martín"), vale el más cercano a tu pin
+  const twins=BY_NAME[city.key];
+  let target=city, km=haversine(guess.lat,guess.lon,city.lat,city.lon);
+  for(const t of twins){ const k=haversine(guess.lat,guess.lon,t.lat,t.lon); if(k<km){km=k;target=t;} }
+  const pts=scoreFor(km);
+  const twinProvs=new Set(twins.map(t=>t.p));
+  const provOk = !!game.provAnswer && twinProvs.has(game.provAnswer);
+  const bonus = provOk?PROV_BONUS:0;
+  const roundPts=pts+bonus;
+  game.total+=roundPts;
+  game.history.push({city:target,km,pts,bonus,provText:game.provText});
+
+  // dibujar
+  const [tx,ty]=LCC.fwd(target.lon,target.lat);
+  clearMarks();
+  addLine(guess.x,guess.y,tx,ty);
+  addCircle(tx,ty,18,"pin-ring"); addCircle(tx,ty,8,"pin-target"); addCircle(guess.x,guess.y,7,"pin-guess");
+  addLabel(tx,ty,target.n);
+  const [w,h]=size();
+  const minX=Math.min(guess.x,tx),maxX=Math.max(guess.x,tx),minY=Math.min(guess.y,ty),maxY=Math.max(guess.y,ty);
+  const pad=Math.max(40,(maxX-minX+maxY-minY)*0.15);
+  const v=fitBox(minX-pad,minY-pad,maxX+pad,maxY+pad,0.05,Math.min(320,h*0.45),80);
+  v.s=Math.max(v.s,FIT_S/9);   // nunca tan cerca que pierdas el contexto
+  setView(v,true);
+
+  // panel
+  countUp($("resPts"),pts,bonus);
+  $("resKm").innerHTML=`${km<1?"<1":fmt(km)} km<small>de distancia</small>`;
+  $("resMeter").style.width="0"; requestAnimationFrame(()=>requestAnimationFrame(()=>$("resMeter").style.width=(pts/MAX_PTS*100)+"%"));
+  $("resLoc").innerHTML=`<b>${target.n}</b>, ${PROVS[target.p]}`;
+  const realProv=PROVS[target.p];
+  if(provOk) $("resProv").innerHTML=`<span class="ok">✓ ${PROVS[game.provAnswer]} · +${PROV_BONUS}</span>`;
+  else if(!game.provText) $("resProv").innerHTML=`<span class="no">${game.provTimeout?"Se acabó el tiempo":"Sin respuesta"}</span>`;
+  else $("resProv").innerHTML=`<span class="no">✗ "${escapeHtml(game.provText)}"</span>`;
+  const notes=[];
+  if(!provOk) notes.push(`Era ${realProv}.`);
+  if(twins.length>1) notes.push(`Hay ${twins.length} localidades llamadas "${city.n}" (${[...twinProvs].map(p=>PROVS[p]).join(", ")}): vale la más cercana a tu pin.`);
+  $("resNote").textContent=notes.join(" ");
+  $("hudScore").textContent=fmt(game.total);
+  $("btnNext").textContent= game.round+1>=game.picks.length ? "Ver resultado final" : "Siguiente ronda";
+  show("result",true);
+  setTimeout(()=>$("btnNext").focus(),50);
+}
+$("btnGuess").onclick=confirmGuess;
+$("btnNext").onclick=()=>{ if(phase!=="result") return; game.round++; nextRound(); };
+
+function countUp(el,pts,bonus){
+  const t0=performance.now(), dur=900;
+  const step=t=>{ const k=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-k,3);
+    el.innerHTML=`${fmt(pts*e)} <small>pts${bonus?` + ${bonus} bonus`:""}</small>`;
+    if(k<1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+}
+function escapeHtml(s){ return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function endGame(){
+  phase="final"; show("hud",false); show("bar",false); show("zoom",false); show("result",false);
+  clearMarks(); resetHome(true);
+  const max=game.picks.length*(MAX_PTS+PROV_BONUS);
+  $("finTotal").innerHTML=`${fmt(game.total)} <small>/ ${fmt(max)}</small>`;
+  const ratio=game.total/max;
+  $("finRank").textContent=RANKS.find(r=>ratio>=r[0])[1];
+  const prev=getBest();
+  if(game.total>prev){ setBest(game.total); $("finBest").textContent = prev?`¡Nuevo récord! (antes: ${fmt(prev)})`:"¡Primer récord registrado!"; }
+  else $("finBest").textContent=`Récord: ${fmt(prev)}`;
+  $("finRows").innerHTML=game.history.map((h,i)=>`<tr><td>${i+1}</td>
+    <td>${h.city.n}<span class="p">${PROVS[h.city.p]}</span></td>
+    <td class="n">${h.km<1?"<1":fmt(h.km)}</td>
+    <td class="n">${h.bonus?'<span style="color:var(--good)">+500</span>':'<span style="color:var(--muted)">—</span>'}</td>
+    <td class="n"><b>${fmt(h.pts+h.bonus)}</b></td></tr>`).join("");
+  show("final",true);
+}
+$("btnStart").onclick=startGame;
+$("btnAgain").onclick=startGame;
+$("btnMenu").onclick=()=>{ show("final",false); show("start",true); phase="menu"; refreshMenu(); };
+
+document.addEventListener("keydown",e=>{
+  if(e.key!=="Enter" && e.key!==" ") return;
+  if(phase==="guess" && guess){ e.preventDefault(); confirmGuess(); }
+  else if(phase==="result"){ e.preventDefault(); $("btnNext").click(); }
+  else if(phase==="menu" && e.key==="Enter"){ e.preventDefault(); startGame(); }
+});
+
+/* init */
+resetHome(false); refreshMenu();
+</script>
+</body>
+</html>
