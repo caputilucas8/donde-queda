@@ -383,6 +383,7 @@ function clampView(v){
 }
 function applyView(){
   const [w,h]=size();
+  if(!w || !h || !isFinite(view.s)) return;   // pestaña oculta / sin tamaño todavía
   svg.setAttribute("viewBox",`${view.cx-w*view.s/2} ${view.cy-h*view.s/2} ${w*view.s} ${h*view.s}`);
   sizeMarks();
 }
@@ -404,8 +405,11 @@ function zoomAt(px,py,factor){
   setView({cx:wx-(px-w/2)*ns, cy:wy-(py-h/2)*ns, s:ns});
 }
 function screenToWorld(px,py){ const [w,h]=size(); return [view.cx+(px-w/2)*view.s, view.cy+(py-h/2)*view.s]; }
-function resetHome(animate){ const v=homeView(); FIT_S=v.s; setView(v,animate); }
-window.addEventListener("resize",()=>{ const keep={...view}; FIT_S=homeView().s; setView(keep); });
+function resetHome(animate){ const [w,h]=size(); if(!w||!h) return; const v=homeView(); FIT_S=v.s; setView(v,animate); }
+new ResizeObserver(()=>{
+  const [w,h]=size(); if(!w||!h) return;
+  if(!isFinite(FIT_S) || !isFinite(view.s) || view.s===1 && view.cx===0) return resetHome(false);
+  const keep={...view}; FIT_S=homeView().s; setView(keep); }).observe(svg);
 
 /* pointer handling: click = pin, drag = pan, pinch = zoom */
 const pointers=new Map(); let drag=null, pinch=null;
